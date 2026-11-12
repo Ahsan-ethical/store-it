@@ -1,0 +1,3 @@
+{"event": "session_start", "timestamp": "2026-08-19T22:32:35.214006+02:00", "session_id": "0ba7975c-b401-4d53-8a80-8c0aac937ee5", "alias_api_key": ""}
+{"event": "user_message", "timestamp": "2026-08-19T22:38:07.894844+02:00", "content": "Hello. Reply only with: CAI + Laguna is working."}
+{"event": "session_end", "timestamp": "2026-08-19T22:47:45.282973+02:00", "session_id": "0ba7975c-b401-4d53-8a80-8c0aac937ee5", "timing_metrics": {"active_time_seconds": 26.898895263671875, "idle_time_seconds": 913.0499215126038, "total_time_seconds": 939.9488167762756, "active_percentage": 2.86}, "cost": {"total_cost": 0.0}}

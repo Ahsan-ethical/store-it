@@ -1,0 +1,13 @@
+/* styles.css */
+
+#parent {
+  color: red;
+  height: 100%;
+  background-color: lightgray
+}
+
+.child {
+  background-color: yellow;
+  color: blue;
+  height: 100%;
+}

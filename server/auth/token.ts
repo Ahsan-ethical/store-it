@@ -3,10 +3,10 @@ import crypto from 'crypto';
 import connectDB from '@/adapters/database/mongoose';
 import RefreshToken from '@/adapters/database/models/RefreshToken';
 
-const ACCESS_SECRET = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET!;
+const ACCESS_SECRET = process.env.JWT_SECRET 
 const REFRESH_TOKEN_BYTES = 32;
 const REFRESH_MAX_AGE_DAYS = 30;
-const ACCESS_MAX_AGE_MINUTES = 15;
+const ACCESS_MAX_AGE_MINUTES = 5;
 
 export type AccessTokenPayload = {
   userId: string;

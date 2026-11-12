@@ -29,6 +29,8 @@ pnpm-debug.log*
 coverage/
 
 # env files (VERY IMPORTANT)
+.env*
+!.env.example
 .env
 .env.local
 .env.development.local

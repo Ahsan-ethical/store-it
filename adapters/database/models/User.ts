@@ -16,6 +16,8 @@ const UserSchema = new mongoose.Schema({
   },
   provider:     { type: String, default: 'credentials' },  
   providerId:   { type: String },  
+  telegramId:   { type: String, sparse: true, unique: true },
+  telegramUsername: { type: String, default: null },
   storageused:  { type: Number, default: 0 },
   storagelimit: { type: Number, default: 5 * 1024 * 1024 * 1024 },
   createdAt: { type: Date, default: Date.now },

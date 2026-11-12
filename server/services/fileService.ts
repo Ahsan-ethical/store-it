@@ -12,6 +12,7 @@ import { createS3DownloadUrl, createTelegramDownloadStream } from "@/server/lib/
 import { deleteCachedChunkBestEffort } from "@/server/lib/telegramChunkCache";
 import { ServiceError } from "./shareService";
 import EncryptionKeyModel from "@/adapters/database/models/EncryptionKey";
+import { getTelegramCredentialsForBot } from "@/server/telegram/childBot";
 
 export async function moveFile(userId: string, fileId: string, folderId: string | null) {
   if (!ObjectId.isValid(fileId)) throw new ServiceError("Invalid file id", 400);
@@ -86,7 +87,10 @@ export async function hardDeleteFile(userId: string, fileId: string) {
   if (file.backend === "telegram") {
     const chunks = await TelegramChunk.find({ fileId });
     for (const chunk of chunks) {
-      try { await deleteMessage(chunk.telegramMessageId); } catch {}
+      try {
+        const telegramCredentials = await getTelegramCredentialsForBot(chunk.telegramBot || file.telegramBot);
+        await deleteMessage(chunk.telegramMessageId, telegramCredentials);
+      } catch {}
       if (chunk.versionId) {
         await deleteCachedChunkBestEffort(String(chunk.versionId), chunk.chunkIndex);
       }

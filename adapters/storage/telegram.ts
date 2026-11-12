@@ -1,3 +1,6 @@
+import type { TelegramStorageCredentials } from "@/server/telegram/childBot";
+import crypto from "node:crypto";
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID!;
 const API_URL = (process.env.TELEGRAM_BOT_API_URL || "https://api.telegram.org").replace(/\/+$/, "");
@@ -5,19 +8,20 @@ const API_URL = (process.env.TELEGRAM_BOT_API_URL || "https://api.telegram.org")
 // Node 18+ fetch uses undici internally with keep-alive connection pooling by default.
 // No explicit configuration needed — connections to the same origin are reused automatically.
 
-function botUrl(method: string) {
-  return `${API_URL}/bot${BOT_TOKEN}/${method}`;
+function botUrl(method: string, credentials?: TelegramStorageCredentials) {
+  return `${API_URL}/bot${credentials?.token || BOT_TOKEN}/${method}`;
 }
 
 export async function sendDocument(
   blob: Blob,
   filename: string,
+  credentials?: TelegramStorageCredentials,
 ): Promise<{ messageId: number; fileId: string }> {
   const form = new FormData();
-  form.append("chat_id", CHANNEL_ID);
+  form.append("chat_id", credentials?.chatId || CHANNEL_ID);
   form.append("document", blob, filename);
 
-  const res = await fetch(botUrl("sendDocument"), { method: "POST", body: form });
+  const res = await fetch(botUrl("sendDocument", credentials), { method: "POST", body: form });
   const body = await res.json();
 
   if (!res.ok) {
@@ -47,30 +51,32 @@ export async function sendDocument(
 const FILE_PATH_TTL_MS = 50 * 60 * 1000;
 const filePathCache = new Map<string, { filePath: string; fileSize: number; expiresAt: number }>();
 
-export async function getFile(fileId: string): Promise<{ filePath: string; fileSize: number }> {
-  const cached = filePathCache.get(fileId);
+export async function getFile(fileId: string, credentials?: TelegramStorageCredentials): Promise<{ filePath: string; fileSize: number }> {
+  const tokenKey = credentials?.token ? crypto.createHash("sha256").update(credentials.token).digest("hex") : "legacy";
+  const cacheKey = `${tokenKey}:${fileId}`;
+  const cached = filePathCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return { filePath: cached.filePath, fileSize: cached.fileSize };
   }
 
-  const res = await fetch(botUrl("getFile") + `?file_id=${encodeURIComponent(fileId)}`);
+  const res = await fetch(botUrl("getFile", credentials) + `?file_id=${encodeURIComponent(fileId)}`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.description || "Telegram getFile failed");
 
   const result = { filePath: body.result.file_path, fileSize: body.result.file_size };
-  filePathCache.set(fileId, { ...result, expiresAt: Date.now() + FILE_PATH_TTL_MS });
+  filePathCache.set(cacheKey, { ...result, expiresAt: Date.now() + FILE_PATH_TTL_MS });
   return result;
 }
 
-export function getFileDownloadUrl(filePath: string): string {
-  return `${API_URL}/file/bot${BOT_TOKEN}/${filePath}`;
+export function getFileDownloadUrl(filePath: string, credentials?: TelegramStorageCredentials): string {
+  return `${API_URL}/file/bot${credentials?.token || BOT_TOKEN}/${filePath}`;
 }
 
-export async function deleteMessage(messageId: number): Promise<void> {
-  const res = await fetch(botUrl("deleteMessage"), {
+export async function deleteMessage(messageId: number, credentials?: TelegramStorageCredentials): Promise<void> {
+  const res = await fetch(botUrl("deleteMessage", credentials), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: CHANNEL_ID, message_id: messageId }),
+    body: JSON.stringify({ chat_id: credentials?.chatId || CHANNEL_ID, message_id: messageId }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

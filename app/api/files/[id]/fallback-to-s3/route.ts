@@ -5,6 +5,7 @@ import File from "@/adapters/database/models/File";
 import TelegramChunk from "@/adapters/database/models/TelegramChunk";
 import EncryptionKey from "@/adapters/database/models/EncryptionKey";
 import { deleteMessage } from "@/adapters/storage/telegram";
+import { getTelegramCredentialsForBot } from "@/server/telegram/childBot";
 
 export async function POST(
   req: NextRequest,
@@ -72,7 +73,8 @@ export async function POST(
 
   for (const chunk of chunks) {
     try {
-      await deleteMessage(chunk.telegramMessageId);
+      const telegramCredentials = await getTelegramCredentialsForBot(chunk.telegramBot || file.telegramBot);
+      await deleteMessage(chunk.telegramMessageId, telegramCredentials);
     } catch (err) {
       console.error(`[POST /api/files/${id}/fallback-to-s3] failed to delete Telegram message ${chunk.telegramMessageId}`, err);
       cleanupWarnings.push(`Failed to delete Telegram message ${chunk.telegramMessageId}`);

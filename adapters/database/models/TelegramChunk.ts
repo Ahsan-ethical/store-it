@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const TelegramChunkSchema = new mongoose.Schema({
   fileId: { type: mongoose.Schema.Types.ObjectId, ref: "File", required: true },
+  telegramBot: { type: mongoose.Schema.Types.ObjectId, ref: "ChildBot", default: null },
   versionId: { type: mongoose.Schema.Types.ObjectId, ref: "FileVersion", default: null },
   chunkIndex: { type: Number, required: true },
   hash: { type: String, required: true },

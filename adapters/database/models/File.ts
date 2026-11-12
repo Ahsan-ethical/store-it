@@ -21,6 +21,9 @@ const FileSchema = new Schema({
      default: 'pending',
    },
    backend:    { type: String, enum: ['s3', 'telegram'], default: 's3' },
+   // Reference to the exact child bot that received this file. Legacy files
+   // omit it and continue through the shared TELEGRAM_BOT_TOKEN adapter.
+   telegramBot: { type: Schema.Types.ObjectId, ref: 'ChildBot', default: null },
    totalChunks: { type: Number },
    chunkSize:   { type: Number },
    lastError: { type: String, default: null },
@@ -42,6 +45,17 @@ const FileSchema = new Schema({
    deletedAt: { type: Date, default: null },
 }, { timestamps: true });
 
+// // Find an existing upload for this owner by hash and status
+// FileSchema.index({ owner_id: 1, hash: 1, status: 1 });
+
+// // List files in a folder, newest first
+// FileSchema.index({ owner_id: 1, folderId: 1, status: 1, createdAt: -1 });
+
+// // Check for a same-named file in a folder
+// FileSchema.index({ owner_id: 1, folderId: 1, filename: 1, status: 1 });
+
+// // List files by email and status, newest first
+// FileSchema.index({ owner_email: 1, status: 1, createdAt: -1 });
 FileSchema.index({ owner_id: 1, hash: 1, status: 1 });
 FileSchema.index({ owner_id: 1, filename: 1, folderId: 1 });
 FileSchema.index({ filename: "text", searchText: "text" });

@@ -9,22 +9,22 @@ import Providers from "@/components/ui/providers";
 import { Toaster } from "sonner";
 
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
-  title: "Your App Name",
-  description: "Your description",
+  title: "StoreIT",
+  description: "Secure file storage, sharing, and recovery",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={cn("font-sans", geist.variable)}>
       <body> <AuthProvider>
-  <Providers>
-    {children}
-     <Toaster richColors position="top-right" />
-  </Providers>
-</AuthProvider>
+        <Providers>
+          {children}
+          <Toaster richColors position="top-right" />
+        </Providers>
+      </AuthProvider>
       </body>
     </html>
   );

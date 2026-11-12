@@ -8,6 +8,7 @@ import { encryptChunkWithNonce } from "@/server/services/encryptionService";
 import { computeHash } from "@/server/lib/hash";
 import { canUploadToFile } from "@/server/services/uploadAccess";
 import crypto from "crypto";
+import { getTelegramCredentialsForBot } from "@/server/telegram/childBot";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -93,6 +94,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Chunk already uploaded", chunkIndex, telegramFileId: existingChunk.telegramFileId });
   }
 
+  let telegramCredentials;
+  try {
+    telegramCredentials = await getTelegramCredentialsForBot(file.telegramBot);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Telegram storage bot unavailable" }, { status: 409 });
+  }
+
   tAfterAccessChecks = Date.now();
 
   const chunkBuffer = Buffer.from(await chunkFile.arrayBuffer());
@@ -131,12 +139,13 @@ export async function POST(req: NextRequest) {
     try {
       const blob = new Blob([new Uint8Array(dataToStore)], { type: "application/octet-stream" });
       const tSendStart = Date.now();
-      const { messageId, fileId: tgFileId } = await sendDocument(blob, filename);
+      const { messageId, fileId: tgFileId } = await sendDocument(blob, filename, telegramCredentials);
       const tSendDone = Date.now();
 
       try {
         await TelegramChunk.create({
           fileId,
+          telegramBot: file.telegramBot || null,
           chunkIndex,
           hash: storedHash,
           plaintextHash: hash,
@@ -147,11 +156,11 @@ export async function POST(req: NextRequest) {
         });
       } catch (dbErr: any) {
         if (dbErr?.code === 11000) {
-          await deleteMessage(messageId);
+          await deleteMessage(messageId, telegramCredentials);
           return NextResponse.json({ message: "Chunk already recorded", chunkIndex, telegramFileId: dbErr?.telegramFileId || tgFileId });
         }
         console.error(`[POST /api/files/telegram/chunk] failed to record chunk ${chunkIndex} for file ${fileId} after Telegram send succeeded; deleting orphaned Telegram message`, dbErr);
-        await deleteMessage(messageId);
+        await deleteMessage(messageId, telegramCredentials);
         throw dbErr;
       }
 

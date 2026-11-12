@@ -3,7 +3,9 @@ import connectDB from '@/adapters/database/mongoose';
 import User from '@/adapters/database/models/User';
 import type { AuthUser } from './token';
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+// The widget domain is configured for the manager bot. Keep the legacy bot
+// fallback for deployments that haven't moved their login widget yet.
+const TELEGRAM_BOT_TOKEN = process.env.MANAGER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 
 export type TelegramLoginPayload = {
   id?: string;
@@ -15,7 +17,7 @@ export type TelegramLoginPayload = {
   hash?: string;
 };
 
-export async function verifyTelegramLogin(payload: TelegramLoginPayload): Promise<AuthUser> {
+export function verifyTelegramLoginPayload(payload: TelegramLoginPayload): void {
   if (!payload?.id || !payload?.hash) {
     throw new Error('Missing Telegram auth data');
   }
@@ -42,9 +44,13 @@ export async function verifyTelegramLogin(payload: TelegramLoginPayload): Promis
   }
 
   const authDate = parseInt(payload.auth_date || '0', 10);
-  if (Date.now() / 1000 - authDate > 86400) {
+  if (!Number.isFinite(authDate) || authDate <= 0 || Date.now() / 1000 - authDate > 86400 || authDate > Date.now() / 1000 + 60) {
     throw new Error('Telegram auth expired');
   }
+}
+
+export async function verifyTelegramLogin(payload: TelegramLoginPayload): Promise<AuthUser> {
+  verifyTelegramLoginPayload(payload);
 
   try {
     await connectDB();

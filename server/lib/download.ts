@@ -3,7 +3,6 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { after } from "next/server";
 import { s3, BUCKET } from "@/adapters/storage/s3";
 import { generateFileUrl, CDN_CONFIG } from "@/adapters/storage/cdn";
-import File from "@/adapters/database/models/File";
 import FileVersionModel from "@/adapters/database/models/FileVersion";
 import TelegramChunk from "@/adapters/database/models/TelegramChunk";
 import EncryptionKeyModel from "@/adapters/database/models/EncryptionKey";
@@ -11,6 +10,8 @@ import { getFile, getFileDownloadUrl } from "@/adapters/storage/telegram";
 import { getCachedChunk, cacheChunkBestEffort } from "@/server/lib/telegramChunkCache";
 import { decryptChunk } from "@/server/services/decryptionService";
 import { parseNonce } from "@/server/lib/crypto";
+import File from "@/adapters/database/models/File";
+import { getTelegramCredentialsForBot } from "@/server/telegram/childBot";
 
 const PREFETCH = 4;
 
@@ -78,8 +79,9 @@ export async function createTelegramDownloadStream(
         const cached = await getCachedChunk(versionId, index);
         if (cached) return cached;
 
-        const { filePath } = await getFile(chunk.telegramFileId);
-        const url = getFileDownloadUrl(filePath);
+        const telegramCredentials = await getTelegramCredentialsForBot(chunk.telegramBot);
+        const { filePath } = await getFile(chunk.telegramFileId, telegramCredentials);
+        const url = getFileDownloadUrl(filePath, telegramCredentials);
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to download chunk ${index}`);
         const buffer = Buffer.from(await res.arrayBuffer());

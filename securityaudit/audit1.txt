@@ -1,0 +1,302 @@
+Now I have a comprehensive understanding of the application. Let me compile my findings.                             │
+│                                                                                                                      │
+│                                            StoreIt Security Audit Report                                             │
+│                                                                                                                      │
+│ Architecture Overview                                                                                                │
+│                                                                                                                      │
+│ StoreIt is a Next.js 16 file storage application with the following architecture:                                    │
+│                                                                                                                      │
+│  • Frontend: Next.js App Router with React 19, using TypeScript                                                      │
+│  • Backend: Next.js API Routes serving as the application server                                                     │
+│  • Authentication: JWT-based (access tokens: 15min, refresh tokens: 30 days) with bcrypt password hashing            │
+│  • Database: MongoDB via Mongoose ODM                                                                                │
+│  • Storage: AWS S3 with CloudFront CDN, with Telegram API as a fallback storage backend                              │
+│  • Encryption: Zero-knowledge client-side encryption using AES-256-GCM with per-file DEK                             │
+│  • Sharing: Token-based public share links (SHA-256 hashed in DB) with password protection, and direct user-to-user  │
+│    folder grants with role-based permissions                                                                         │
+│                                                                                                                      │
+│ Let me now detail the security findings from my code review:                                                         │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ CONFIRMED VULNERABILITIES                                                                                            │
+│                                                                                                                      │
+│ 1. Missing Authorization on /api/files/fetch/url Endpoint - IDOR                                                     │
+│                                                                                                                      │
+│ Severity: HIGH                                                                                                       │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/app/api/files/fetch/url/route.ts                                   │
+│ Code Location: POST handler, line ~22-33                                                                             │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│   1 const file = await File.findOne({ storageUrl: key, owner_id: user._id });                                        │
+│   2 if (!file) {                                                                                                     │
+│   3   return NextResponse.json({ error: "Access denied" }, { status: 403 });                                         │
+│   4 }                                                                                                                │
+│   5                                                                                                                  │
+│   6 const url = generateFileUrl(key);                                                                                │
+│   7 return NextResponse.json({ url, cached: true }, { status: 200 });                                                │
+│ Attack Scenario: The endpoint takes a key parameter from the request body and looks up a file by storageUrl matching │
+│ that key. However, it returns a CloudFront URL (via generateFileUrl) which is a public, cacheable URL without any    │
+│ access control. An attacker who can guess or enumerate S3 object keys (which follow the predictable pattern          │
+│ uploads/${user._id}/${Date.now()}-${filename}) can access any file by its key directly through this endpoint,        │
+│ bypassing ownership checks entirely since the CloudFront URL itself is publicly accessible once generated.           │
+│                                                                                                                      │
+│ The owner_id check is performed, but the generated CloudFront URL (https://${CDN_DOMAIN}/${storageUrl}) is a direct  │
+│ public path to the S3 object with no authorization required. If an attacker knows the storage URL pattern, they can  │
+│ access it directly without going through this endpoint.                                                              │
+│                                                                                                                      │
+│ Impact: Unauthorized access to any user's files through CloudFront URL, bypassing all access controls.               │
+│                                                                                                                      │
+│ Remediation: Use time-limited S3 presigned URLs instead of public CloudFront URLs for file access, or implement      │
+│ signed CloudFront URLs with specific policies that restrict access.                                                  │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 2. Missing Authorization Check on Folder Move Operation                                                              │
+│                                                                                                                      │
+│ Severity: HIGH                                                                                                       │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/server/services/folderService.ts                                   │
+│ Code Location: moveFolder function                                                                                   │
+│                                                                                                                      │
+│ Evidence: Looking at the moveFolder function:                                                                        │
+│   1 export async function moveFolder(userId: string, folderId: string, parentId: string | null) {                    │
+│   2   // ...validation...                                                                                            │
+│   3   const session = await mongoose.startSession();                                                                 │
+│   4   try {                                                                                                          │
+│   5     let updated: unknown = null;                                                                                 │
+│   6     await session.withTransaction(async () => {                                                                  │
+│   7       const folder = await Folder.findOne({ _id: folderId, deleted: { $ne: true } }).session(session);           │
+│   8       // NO ownership/permission check on the target folder                                                      │
+│ The moveFolder function does not verify that the user has edit+ permission on the destination parent folder. The     │
+│ check only verifies the source folder exists, but doesn't validate permission to move into the destination folder.   │
+│ While there's a self-move check, there's no authorization check on the destination.                                  │
+│                                                                                                                      │
+│ Attack Scenario: An authenticated user could move another user's shared folder (where they have editor access) into  │
+│ a different parent folder they don't own, disrupting the shared folder structure or potentially breaking permission  │
+│ inheritance.                                                                                                         │
+│                                                                                                                      │
+│ Impact: Unauthorized reorganization of shared folder structures, potential permission inheritance corruption.        │
+│                                                                                                                      │
+│ Remediation: Add authorization check using requireFolderRole(userId, parentId, "editor") before performing the move  │
+│ operation.                                                                                                           │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 3. Sensitive Information Exposure in API Error Responses                                                             │
+│                                                                                                                      │
+│ Severity: MEDIUM                                                                                                     │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/app/api/files/upload/route.ts                                      │
+│ Code Location: Line ~87: return NextResponse.json({ error: "Duplicate file", existingFile: existingFile }, { status: │
+│ 409 });                                                                                                              │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│   1 if (existingFileRecord) {                                                                                        │
+│   2   return NextResponse.json(                                                                                      │
+│   3     { error: "Duplicate file", existingFile: existingFileRecord },                                               │
+│   4     { status: 409 }                                                                                              │
+│   5   );                                                                                                             │
+│   6 }                                                                                                                │
+│ Attack Scenario: When uploading a file that duplicates an existing one, the full file record (including storageUrl,  │
+│ owner_email, hash, mimetype, etc.) is returned in the response. This leaks internal file metadata to any             │
+│ authenticated user who happens to upload a file with the same hash, revealing storage paths and potentially other    │
+│ sensitive information.                                                                                               │
+│                                                                                                                      │
+│ Impact: Information disclosure about existing files and storage layout.                                              │
+│                                                                                                                      │
+│ Remediation: Return only a minimal response confirming the duplicate exists, without exposing the full file record.  │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 4. Potential Race Condition in Multipart Upload Resume                                                               │
+│                                                                                                                      │
+│ Severity: MEDIUM                                                                                                     │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/app/api/files/upload/multipart/init/route.ts                       │
+│ Code Location: Lines 43-46                                                                                           │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│    1 if (fileId) {                                                                                                   │
+│    2     existingFileRecord = await File.findOne({                                                                   │
+│    3       _id: fileId,                                                                                              │
+│    4       owner_id: user._id,                                                                                       │
+│    5       status: "s3_pending",                                                                                     │
+│    6       backend: "s3",                                                                                            │
+│    7       deleted: { $ne: true },                                                                                   │
+│    8     });                                                                                                         │
+│    9     if (!existingFileRecord) {                                                                                  │
+│   10       return NextResponse.json(                                                                                 │
+│   11         { error: "Fallback file not found or not in s3_pending state" },                                        │
+│   12         { status: 404 },                                                                                        │
+│   13       );                                                                                                        │
+│   14     }                                                                                                           │
+│   15     if (existingFileRecord.hash !== hash) {                                                                     │
+│   16       return NextResponse.json(                                                                                 │
+│   17         { error: "Selected file does not match the original. Hash mismatch." },                                 │
+│   18         { status: 409 },                                                                                        │
+│   19       );                                                                                                        │
+│   20     }                                                                                                           │
+│   21   }                                                                                                             │
+│ Attack Scenario: When resuming a multipart upload using fileId, the code checks ownership via owner_id: user._id,    │
+│ but there's a potential TOCTOU (time-of-check-time-of-use) race. Between the initial File.findOne check and the      │
+│ subsequent s3.send(CreateMultipartUploadCommand), another user could potentially take ownership of the file through  │
+│ folder sharing/transfer operations. While the check uses owner_id, the actual S3 multipart upload initiation doesn't │
+│ re-validate ownership atomically.                                                                                    │
+│                                                                                                                      │
+│ Impact: Potential unauthorized initiation of multipart uploads on files owned by other users in a race condition     │
+│ scenario.                                                                                                            │
+│                                                                                                                      │
+│ Remediation: Use database transactions or re-validate ownership atomically with the S3 upload initiation.            │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 5. Missing CSRF Protection on State-Changing API Endpoints                                                           │
+│                                                                                                                      │
+│ Severity: MEDIUM                                                                                                     │
+│ File: All API route files that accept POST/PATCH/DELETE requests                                                     │
+│ Code Location: Throughout the API                                                                                    │
+│                                                                                                                      │
+│ Evidence: The application uses cookies for authentication (access_token, refresh_token) with sameSite: 'lax'. While  │
+│ sameSite: 'lax' provides some protection against CSRF, it does not fully protect all state-changing operations. For  │
+│ POST requests from same-site contexts, SameSite=Lax cookies are sent. The application does not implement CSRF tokens │
+│ for state-changing requests.                                                                                         │
+│                                                                                                                      │
+│ Attack Scenario: An attacker could craft a malicious page that submits forms to the StoreIt API (e.g., file          │
+│ deletion, folder sharing changes). While SameSite=Lax blocks cross-site POST requests in modern browsers, this is    │
+│ still a defense-in-depth gap, and older browsers or certain edge cases may still allow the attack.                   │
+│                                                                                                                      │
+│ Impact: Potential unauthorized actions performed on behalf of authenticated users.                                   │
+│                                                                                                                      │
+│ Remediation: Implement CSRF tokens for all state-changing operations, or use SameSite=Strict for critical cookies    │
+│ combined with additional CSRF protection.                                                                            │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 6. Inconsistent Authorization on Telegram Chunk Upload                                                               │
+│                                                                                                                      │
+│ Severity: MEDIUM                                                                                                     │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/app/api/files/telegram/chunk/route.ts                              │
+│ Code Location: Lines 74-79                                                                                           │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│    1 const file = await File.findById(fileId);                                                                       │
+│    2 if (!file) {                                                                                                    │
+│    3   console.warn(`[POST /api/files/telegram/chunk] file ${fileId} not found (chunk ${chunkIndex})`);              │
+│    4   return NextResponse.json({ error: "File not found" }, { status: 404 });                                       │
+│    5 }                                                                                                               │
+│    6 // Re-checked on every single chunk, not just once at init — the                                                │
+│    7 // permission-revoked-mid-upload and folder-moved/ownership-transferred                                         │
+│    8 // -mid-upload requirements both need this to be live, not cached from                                          │
+│    9 // whatever was true when the upload started.                                                                   │
+│   10 if (!(await canUploadToFile(user.userId, file))) {                                                              │
+│   11   // ...                                                                                                        │
+│   12 }                                                                                                               │
+│ The File.findById(fileId) call does not include any filtering on deleted status. A file that has been deleted        │
+│ (soft-deleted) can still receive chunk uploads if an attacker somehow has access to the fileId. While the            │
+│ canUploadToFile check provides some protection, the file lookup itself doesn't filter out deleted files.             │
+│                                                                                                                      │
+│ Attack Scenario: An attacker with knowledge of a deleted file's ID could potentially upload chunks to it, though the │
+│ canUploadToFile check should prevent this in most cases.                                                             │
+│                                                                                                                      │
+│ Impact: Potential data manipulation of deleted files.                                                                │
+│                                                                                                                      │
+│ Remediation: Add deleted: { $ne: true } to the file lookup query.                                                    │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ POTENTIAL FINDINGS                                                                                                   │
+│                                                                                                                      │
+│ 7. Potential Information Leak via Error Messages                                                                     │
+│                                                                                                                      │
+│ Severity: LOW                                                                                                        │
+│ File: Multiple locations including /mnt/c/Users/Lenovo/Desktop/project/storeit/app/api/register/route.ts             │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│   1 } catch (err) {                                                                                                  │
+│   2     console.error("Register error:", err);                                                                       │
+│   3     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })                                │
+│   4   }                                                                                                              │
+│ While the register endpoint properly returns generic error messages, other endpoints like the login route:           │
+│   1 } catch (err) {                                                                                                  │
+│   2     const message = err instanceof Error ? err.message : 'Invalid credentials';                                  │
+│   3     return NextResponse.json({ error: message }, { status: 401 });                                               │
+│   4   }                                                                                                              │
+│ May leak internal error details through error messages.                                                              │
+│                                                                                                                      │
+│ Remediation: Ensure all error responses return generic messages to clients while logging detailed errors             │
+│ server-side.                                                                                                         │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 8. Lack of Input Validation on File ID Parameters                                                                    │
+│                                                                                                                      │
+│ Severity: LOW                                                                                                        │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/app/api/files/[id]/chunk-data/[index]/route.ts                     │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│   1 const { id, index } = await params;                                                                              │
+│   2 const versionId = req.nextUrl.searchParams.get("versionId");                                                     │
+│   3 const chunkIndex = parseInt(index, 10);                                                                          │
+│   4 if (!versionId || isNaN(chunkIndex) || chunkIndex < 0) {                                                         │
+│   5   return NextResponse.json({ error: "versionId and a valid chunk index are required" }, { status: 400 });        │
+│   6 }                                                                                                                │
+│ While ObjectId validation is done in some places, the chunk index is parsed from a string parameter without bounds   │
+│ checking against the actual file's total chunks.                                                                     │
+│                                                                                                                      │
+│ Remediation: Add validation that chunkIndex is within the bounds of the file's total chunks.                         │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ 9. Potential Timing Attack in Token Comparison                                                                       │
+│                                                                                                                      │
+│ Severity: LOW                                                                                                        │
+│ File: /mnt/c/Users/Lenovo/Desktop/project/storeit/server/auth/telegram.ts and                                        │
+│ /mnt/c/Users/Lenovo/Desktop/project/storeit/server/services/permissionService.ts                                     │
+│                                                                                                                      │
+│ Evidence:                                                                                                            │
+│   1 if (computedHash !== payload.hash) {                                                                             │
+│   2   throw new Error('Invalid Telegram auth');                                                                      │
+│   3 }                                                                                                                │
+│ Direct string comparison (!==) is used instead of constant-time comparison functions for hash verification.          │
+│                                                                                                                      │
+│ Remediation: Use a constant-time comparison function like crypto.timingSafeEqual() for hash comparisons.             │
+│                                                                                                                      │
+│ -------------------------------------------------------------------------------------------------------------------- │
+│                                                                                                                      │
+│ Summary                                                                                                              │
+│                                                                                                                      │
+│                                                                                                                      │
+│  #  Finding                                                                          Severity  Status                │
+│  ───────────────────────────────────────────────────────────────────────────────────────────────────────             │
+│  1  Missing Authorization on /api/files/fetch/url (IDOR via public CloudFront URLs)  HIGH      CONFIRMED             │
+│  2  Missing Authorization Check on Folder Move Operation                             HIGH      CONFIRMED             │
+│  3  Sensitive Information Exposure in Duplicate File Response                        MEDIUM    CONFIRMED             │
+│  4  Race Condition in Multipart Upload Resume                                        MEDIUM    POTENTIAL             │
+│  5  Missing CSRF Protection on State-Changing APIs                                   MEDIUM    CONFIRMED             │
+│  6  Inconsistent Authorization on Telegram Chunk Upload                              MEDIUM    CONFIRMED             │
+│  7  Information Leak via Error Messages                                              LOW       POTENTIAL             │
+│  8  Lack of Input Validation on File ID Parameters                                   LOW       POTENTIAL             │
+│  9  Timing Attack in Hash Comparisons                                                LOW       POTENTIAL             │
+│                                                                                                                      │
+│                                                                                                                      │
+│ The most critical findings are the IDOR vulnerability in the /api/files/fetch/url endpoint, which allows             │
+│ unauthorized access to files through publicly accessible CloudFront URLs, and the missing authorization check on     │
+│ folder moves, which could allow unauthorized manipulation of shared folder structures.                               │
+│                                                                                                                      │
+│ Architecture Summary                                                                                                 │
+│                                                                                                                      │
+│ The StoreIt application demonstrates a well-thought-out architecture with many security best practices implemented:  │
+│                                                                                                                      │
+│  • Strong Authentication: JWT with short-lived access tokens (15 min) + refresh tokens with rotation and family IDs  │
+│  • Proper Rate Limiting: IP-based and account-based rate limiting for auth endpoints                                 │
+│  • Secure Token Handling: Refresh tokens are hashed (SHA-256) before storage, share tokens are hashed                │
+│  • Access Control: Comprehensive ownership checks, role-based permissions, and inheritance via materialized paths    │
+│  • Encryption: Zero-knowledge client-side encryption with DEK management                                             │
+│  • Session Security: HttpOnly, SameSite cookies with proper scoping                                                  │
+│  • Error Handling: Generic error responses to prevent information leakage                                            │
+│  • Database Security: Proper indexes, unique constraints, and input validation                                       │
+│                                                                                                                      │
+│ The application shows strong security fundamentals but has a few notable gaps in authorization enforcement and       │
+│ information exposure that should be addressed.                                                                       │
+│                                                                                                                      │
+│                                                                                                                      │
+│  Current: I:113025 O:3125 R:0 ($0.0000) | Total: I:6244880 O:12923 R:85 ($0.0000) | Session: $0.0000 | Context:      │
+│ 88.3% 🟥  

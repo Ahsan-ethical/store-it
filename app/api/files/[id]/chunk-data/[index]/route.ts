@@ -4,6 +4,7 @@ import { getFileChunkData } from "@/server/services/fileService";
 import { ServiceError } from "@/server/services/shareService";
 import { getFile, getFileDownloadUrl } from "@/adapters/storage/telegram";
 import { getCachedChunk, cacheChunkBestEffort } from "@/server/lib/telegramChunkCache";
+import { getTelegramCredentialsForBot } from "@/server/telegram/childBot";
 
 export async function GET(
   req: NextRequest,
@@ -34,8 +35,9 @@ export async function GET(
       });
     }
 
-    const { filePath } = await getFile(chunk.telegramFileId);
-    const tgRes = await fetch(getFileDownloadUrl(filePath));
+    const telegramCredentials = await getTelegramCredentialsForBot(chunk.telegramBot);
+    const { filePath } = await getFile(chunk.telegramFileId, telegramCredentials);
+    const tgRes = await fetch(getFileDownloadUrl(filePath, telegramCredentials));
     if (!tgRes.ok || !tgRes.body) {
       return NextResponse.json({ error: "Failed to fetch chunk from storage" }, { status: 502 });
     }

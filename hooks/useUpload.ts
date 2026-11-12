@@ -49,7 +49,10 @@ type UploadMeta = {
   hash: string;
 };
 
-const SMALL_FILE_LIMIT = 10 * 1024 * 1024;
+// Route every non-empty file through the Telegram chunk path so it uses the
+// account's own child bot. Zero-byte files stay on the existing S3 path;
+// Telegram init requires a positive file size.
+const SMALL_FILE_LIMIT = 0;
 
 // Number of Telegram chunks kept in flight at once. Uploads used to send
 // one chunk at a time — unlike the page-refresh resume path in

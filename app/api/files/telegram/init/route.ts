@@ -8,6 +8,7 @@ import EncryptionKey from "@/adapters/database/models/EncryptionKey";
 import User from "@/adapters/database/models/User";
 import { generateEncryptionKey } from "@/server/lib/crypto";
 import { resolveFolderPermission, atLeast, canUploadToFile } from "@/server/services/uploadAccess";
+import { getActiveChildBot } from "@/server/telegram/childBot";
 
 const CHUNK_SIZE = 4 * 1024 * 1024;
 
@@ -114,6 +115,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Storage limit exceeded" }, { status: 413 });
     }
 
+    const storageBot = await getActiveChildBot(owner._id.toString());
+    if (!storageBot) {
+      return NextResponse.json(
+        { error: "Your Telegram storage bot is not active yet. Finish bot setup on your dashboard, then retry." },
+        { status: 428 },
+      );
+    }
+
     const existingFile = await File.findOne({
       hash,
       owner_id: owner._id,
@@ -146,6 +155,7 @@ export async function POST(req: NextRequest) {
         folderId: folderId ?? null,
         folders_id: folderId ?? null,
         backend: "telegram",
+        telegramBot: storageBot._id,
         totalChunks,
         chunkSize: CHUNK_SIZE,
         status: "pending",
@@ -169,6 +179,7 @@ export async function POST(req: NextRequest) {
         folderId: folderId ?? null,
         folders_id: folderId ?? null,
         backend: "telegram",
+        telegramBot: storageBot._id,
         totalChunks,
         chunkSize: CHUNK_SIZE,
         status: "pending",
@@ -189,6 +200,7 @@ export async function POST(req: NextRequest) {
         folderId: folderId ?? null,
         folders_id: folderId ?? null,
         backend: "telegram",
+        telegramBot: storageBot._id,
         totalChunks,
         chunkSize: CHUNK_SIZE,
         status: "pending",
@@ -216,6 +228,7 @@ export async function POST(req: NextRequest) {
         folderId: folderId ?? null,
         folders_id: folderId ?? null,
         backend: "telegram",
+        telegramBot: storageBot._id,
         totalChunks,
         chunkSize: CHUNK_SIZE,
         status: "pending",

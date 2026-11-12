@@ -4,6 +4,7 @@ import connectDB from "@/adapters/database/mongoose";
 import File from "@/adapters/database/models/File";
 import TelegramChunk from "@/adapters/database/models/TelegramChunk";
 import { deleteMessage } from "@/adapters/storage/telegram";
+import { getTelegramCredentialsForBot } from "@/server/telegram/childBot";
 
 // Accepts either a single `fileId` or a batch `fileIds` (the "dismiss all"
 // action in UploadPanel.tsx sends the whole visible pending-uploads list in
@@ -42,7 +43,8 @@ export async function POST(req: NextRequest) {
       const chunks = await TelegramChunk.find({ fileId });
       for (const chunk of chunks) {
         try {
-          await deleteMessage(chunk.telegramMessageId);
+          const telegramCredentials = await getTelegramCredentialsForBot(chunk.telegramBot || file.telegramBot);
+          await deleteMessage(chunk.telegramMessageId, telegramCredentials);
         } catch {
         }
       }
