@@ -3,10 +3,15 @@ import crypto from 'crypto';
 import connectDB from '@/adapters/database/mongoose';
 import RefreshToken from '@/adapters/database/models/RefreshToken';
 
-const ACCESS_SECRET = process.env.JWT_SECRET 
 const REFRESH_TOKEN_BYTES = 32;
 const REFRESH_MAX_AGE_DAYS = 30;
 const ACCESS_MAX_AGE_MINUTES = 5;
+
+function getAccessSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is not configured");
+  return secret;
+}
 
 export type AccessTokenPayload = {
   userId: string;
@@ -27,14 +32,14 @@ export function generateAccessToken(user: AccessTokenPayload): string {
       storageused: user.storageused,
       storagelimit: user.storagelimit,
     },
-    ACCESS_SECRET,
+    getAccessSecret(),
     { expiresIn: `${ACCESS_MAX_AGE_MINUTES}m` }
   );
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload | null {
   try {
-    const decoded = jwt.verify(token, ACCESS_SECRET) as jwt.JwtPayload;
+    const decoded = jwt.verify(token, getAccessSecret()) as jwt.JwtPayload;
     if (!decoded.userId || !decoded.email) return null;
     return {
       userId: decoded.userId as string,

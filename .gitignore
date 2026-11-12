@@ -70,3 +70,9 @@ telegramcontext.ts
 # internal working docs (not meant to be version-controlled)
 HANDOFF.md
 PROJECT_DESCRIPTION.md
+bot.pdf
+.venv/
+PROJECT_TALK_30_MIN.md
+
+
+
