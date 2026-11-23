@@ -2,32 +2,28 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { Button } from "@/components/ui/button";
+import { useTelegramOAuthError } from "@/components/useTelegramOAuthError";
 
 type BotState = {
   linked: boolean;
   telegramUsername: string | null;
-  bot: { status: string; username: string | null; lastError: string | null; expired: boolean } | null;
+  bot: { status: string; username: string | null; suggestedUsername?: string; lastError: string | null; expired: boolean } | null;
 };
 
-type TelegramWidgetUser = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
+const TELEGRAM_ERRORS: Record<string, string> = {
+  setup: "Telegram login is not configured yet. Add the Telegram OIDC settings in Vercel.",
+  denied: "Telegram linking was cancelled. You can try again whenever you’re ready.",
+  state: "The Telegram link session expired or could not be verified. Start again.",
+  session: "Your StoreIt session expired. Sign in again, then link Telegram from the dashboard.",
+  linked: "This Telegram account is linked to another StoreIt account, or this account already has a different Telegram account linked.",
+  failed: "Telegram could not complete account linking. Check the BotFather allowed URLs and Vercel settings, then retry.",
 };
-
-declare global {
-  interface Window { onStoreItTelegramLink?: (user: TelegramWidgetUser) => void }
-}
 
 export default function BotSetupCard() {
   const { isAuthenticated } = useAuth();
-  const widgetRef = useRef<HTMLDivElement>(null);
+  const telegramErrorCode = useTelegramOAuthError();
   const provisionStarted = useRef(false);
-  const [managerUsername, setManagerUsername] = useState("");
   const [state, setState] = useState<BotState | null>(null);
   const [createUrl, setCreateUrl] = useState("");
   const [error, setError] = useState("");
@@ -50,6 +46,7 @@ export default function BotSetupCard() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not prepare your storage bot");
+      provisionStarted.current = false;
     } finally {
       setBusy(false);
     }
@@ -58,63 +55,14 @@ export default function BotSetupCard() {
   useEffect(() => {
     if (!isAuthenticated) return;
     void refresh().catch((err) => setError(err.message));
-    fetch("/api/auth/telegram/bot-info", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => setManagerUsername(data.username || ""))
-      .catch(() => {});
   }, [isAuthenticated, refresh]);
 
   useEffect(() => {
-    if (state?.linked && state.bot?.status !== "active" && !createUrl && !provisionStarted.current) {
+    if (state?.linked && state.bot?.status !== "active" && state.bot?.status !== "error" && !createUrl && !provisionStarted.current) {
       provisionStarted.current = true;
       void prepareBot();
     }
   }, [state, createUrl, prepareBot]);
-
-  useEffect(() => {
-    if (!managerUsername || !state || state.linked || !widgetRef.current) return;
-    const container = widgetRef.current;
-    container.replaceChildren();
-    window.onStoreItTelegramLink = async (user) => {
-      setBusy(true);
-      setError("");
-      try {
-        const res = await fetch("/api/bots/telegram-link", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: String(user.id),
-            first_name: user.first_name || "",
-            last_name: user.last_name || "",
-            username: user.username || "",
-            photo_url: user.photo_url || "",
-            auth_date: String(user.auth_date),
-            hash: user.hash,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Could not link Telegram account");
-        provisionStarted.current = false;
-        await refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not link Telegram account");
-      } finally {
-        setBusy(false);
-      }
-    };
-    const script = document.createElement("script");
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.async = true;
-    script.setAttribute("data-telegram-login", managerUsername);
-    script.setAttribute("data-size", "large");
-    script.setAttribute("data-onauth", "onStoreItTelegramLink(user)");
-    script.setAttribute("data-request-access", "write");
-    container.appendChild(script);
-    return () => {
-      delete window.onStoreItTelegramLink;
-      container.replaceChildren();
-    };
-  }, [managerUsername, state, refresh]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -122,46 +70,69 @@ export default function BotSetupCard() {
     return () => clearInterval(timer);
   }, [isAuthenticated, refresh]);
 
-  if (!isAuthenticated || !state) return null;
+  const visibleError = telegramErrorCode
+    ? (TELEGRAM_ERRORS[telegramErrorCode] || TELEGRAM_ERRORS.failed)
+    : error;
+
+  if (!isAuthenticated) return null;
+
+  if (!state) {
+    return (
+      <section className="mx-4 mt-4 rounded-xl border bg-card p-4 text-card-foreground shadow-sm md:mx-6" aria-live="polite">
+        <h2 className="font-semibold">Your Telegram storage bot</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{visibleError || "Loading your Telegram bot setup…"}</p>
+        {visibleError && <Button className="mt-3" variant="outline" onClick={() => { setError(""); void refresh().catch((err) => setError(err.message)); }}>Retry</Button>}
+      </section>
+    );
+  }
+
+  const statusText = state.bot?.status === "active"
+    ? "Your personal storage bot is ready. Telegram uploads are enabled."
+    : state.bot?.status === "awaiting_start"
+      ? "Open your new bot and press Start once to enable uploads."
+      : state.bot?.status === "pending_creation"
+        ? "Finish creating your bot in Telegram. This page updates automatically."
+        : state.bot?.status === "error"
+          ? state.bot.lastError || "Telegram could not finish setting up this bot. Contact StoreIt support before creating another."
+          : !state.linked
+            ? "Link the Telegram account that will own your storage bot."
+            : "Your Telegram account is linked. Prepare your personal storage bot.";
 
   return (
     <section className="mx-4 mt-4 rounded-xl border bg-card p-4 text-card-foreground shadow-sm md:mx-6" aria-live="polite">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="font-semibold">Your Telegram storage bot</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each StoreIt account uses its own bot for Telegram file storage.
+            StoreIt creates one storage bot for each account. Link Telegram, create the bot, then press Start to activate it.
           </p>
         </div>
-        {state.bot?.status === "active" ? (
-          <a className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent" href={`https://t.me/${state.bot.username}`} target="_blank" rel="noreferrer">
-            Open @{state.bot.username}
-          </a>
+
+        {state.bot?.status === "active" && state.bot.username ? (
+          <Button asChild variant="outline"><a href={`https://t.me/${state.bot.username}`} target="_blank" rel="noreferrer">Open @{state.bot.username}</a></Button>
         ) : state.bot?.status === "awaiting_start" && state.bot.username ? (
-          <a className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent" href={`https://t.me/${state.bot.username}`} target="_blank" rel="noreferrer">
-            Open bot and press Start
-          </a>
+          <Button asChild variant="outline"><a href={`https://t.me/${state.bot.username}`} target="_blank" rel="noreferrer">Open bot and press Start</a></Button>
+        ) : state.bot?.status === "error" ? (
+          <span className="text-sm font-medium text-destructive">Setup needs attention</span>
         ) : createUrl ? (
-          <a className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent" href={createUrl} target="_blank" rel="noreferrer">
-            Create your bot in Telegram
-          </a>
+          <Button asChild variant="outline"><a href={createUrl} target="_blank" rel="noreferrer">Create your bot in Telegram</a></Button>
         ) : state.linked ? (
-          <button className="rounded-md border px-3 py-2 text-sm font-medium" onClick={() => { provisionStarted.current = false; void prepareBot(); }} disabled={busy}>
+          <Button variant="outline" onClick={() => { provisionStarted.current = false; void prepareBot(); }} disabled={busy}>
             {busy ? "Preparing…" : "Prepare bot link"}
-          </button>
+          </Button>
         ) : (
-          <div ref={widgetRef} />
+          <Button asChild variant="outline"><a href="/api/auth/telegram/start?mode=link">Link Telegram account</a></Button>
         )}
       </div>
-      <p className="mt-3 text-sm text-muted-foreground">
-        {state.bot?.status === "active" ? "Bot is ready. Telegram uploads are enabled." :
-          state.bot?.status === "awaiting_start" ? "Open your new bot and press Start once to enable uploads." :
-          state.bot?.status === "pending_creation" ? "Confirm creation in Telegram. This page will update automatically." :
-          !state.linked ? "Link the Telegram account that will own your storage bot." :
-          "Create your storage bot in Telegram. This page will update automatically."}
-      </p>
-      {busy && <p className="mt-2 text-xs text-muted-foreground">Working…</p>}
-      {(error || state.bot?.lastError) && <p className="mt-2 text-sm text-destructive">{error || state.bot?.lastError}</p>}
+
+      <p className="mt-3 text-sm text-muted-foreground">{statusText}</p>
+      {state.bot?.status === "pending_creation" && createUrl && (
+        <p className="mt-2 text-sm">
+          <a className="font-medium underline underline-offset-4" href={createUrl} target="_blank" rel="noreferrer">Continue bot creation in Telegram</a>
+        </p>
+      )}
+      {busy && <p className="mt-2 text-xs text-muted-foreground">Preparing your bot setup…</p>}
+      {visibleError && <p role="alert" className="mt-2 text-sm text-destructive">{visibleError}</p>}
     </section>
   );
 }

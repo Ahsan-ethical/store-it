@@ -5,7 +5,7 @@ import RefreshToken from '@/adapters/database/models/RefreshToken';
 
 const REFRESH_TOKEN_BYTES = 32;
 const REFRESH_MAX_AGE_DAYS = 30;
-const ACCESS_MAX_AGE_MINUTES = 5;
+const ACCESS_MAX_AGE_MINUTES = 15;
 
 function getAccessSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -19,6 +19,7 @@ export type AccessTokenPayload = {
   provider: string;
   storageused: number;
   storagelimit: number;
+  telegramLinked?: boolean;
 };
 
 export type AuthUser = AccessTokenPayload;
@@ -31,6 +32,7 @@ export function generateAccessToken(user: AccessTokenPayload): string {
       provider: user.provider,
       storageused: user.storageused,
       storagelimit: user.storagelimit,
+      telegramLinked: user.telegramLinked,
     },
     getAccessSecret(),
     { expiresIn: `${ACCESS_MAX_AGE_MINUTES}m` }
@@ -47,6 +49,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload | null {
       provider: (decoded.provider as string) || 'credentials',
       storageused: (decoded.storageused as number) || 0,
       storagelimit: (decoded.storagelimit as number) || 5 * 1024 * 1024 * 1024,
+      telegramLinked: decoded.telegramLinked === true,
     };
   } catch {
     return null;
@@ -112,6 +115,7 @@ export async function rotateRefreshToken(oldToken: string): Promise<{ accessToke
     provider: user.provider || 'credentials',
     storageused: user.storageused || 0,
     storagelimit: user.storagelimit || 5 * 1024 * 1024 * 1024,
+    telegramLinked: Boolean(user.telegramId || (user.provider === 'telegram' && user.providerId)),
   };
 
   const accessToken = generateAccessToken(authUser);

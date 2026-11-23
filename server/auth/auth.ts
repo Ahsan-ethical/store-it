@@ -14,11 +14,14 @@ export async function issueSession(res: NextResponse, user: AuthUser): Promise<v
   setAuthCookies(res, accessToken, refreshToken);
 }
 
-export async function getAuthUser(): Promise<AuthUser | null> {
+export async function getAuthUser(options: { allowUnlinked?: boolean } = {}): Promise<AuthUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get('access_token')?.value;
   if (!token) return null;
-  return verifyAccessToken(token);
+  const decoded = verifyAccessToken(token);
+  const user = decoded ? { ...decoded, telegramLinked: decoded.telegramLinked === true } : null;
+  if (!user || (!options.allowUnlinked && !user.telegramLinked)) return null;
+  return user;
 }
 
 export type AuthErrorResponse = NextResponse & { isAuthError: true };

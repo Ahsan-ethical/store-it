@@ -100,10 +100,16 @@ async function onSubmit(data: FormValues) {
         return
       }
 
-      toast.success("Registration successful!")
+      const registrationResult = await res.json().catch(() => ({}))
+      if (!registrationResult.user) {
+        toast.error("Account created, but sign-in could not be started. Please sign in to continue.")
+        router.push("/sign_in")
+        return
+      }
+      setAuthUser(registrationResult.user)
+      toast.success("Account created. Connect Telegram to continue.")
       form.reset({ email: "", username: "", password: "" })
-      setType("sign-in")
-      router.push("/sign_in")
+      router.push("/connect-telegram")
       return
     }
 
@@ -126,7 +132,7 @@ async function onSubmit(data: FormValues) {
     setAuthUser(loginResult.user)
 
     toast.success("Logged in successfully!")
-    router.push("/dashboard")
+    router.push(loginResult.user.telegramLinked ? "/dashboard" : "/connect-telegram")
   } catch {
     toast.error("Something went wrong")
   }
@@ -164,12 +170,12 @@ async function onSubmit(data: FormValues) {
         await unlockDeviceDEK(data.user.userId, recoveryCode, data)
       } catch {
         toast.error("Signed in, but that recovery code doesn't match this account's files.")
-        router.push("/dashboard")
+        router.push(data.user.telegramLinked ? "/dashboard" : "/connect-telegram")
         return
       }
 
       toast.success("Signed in and unlocked your files.")
-      router.push("/dashboard")
+      router.push(data.user.telegramLinked ? "/dashboard" : "/connect-telegram")
     } catch {
       toast.error("Something went wrong")
     } finally {

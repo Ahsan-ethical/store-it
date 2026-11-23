@@ -77,6 +77,7 @@ export async function verifyRecoveryLogin(email: string, recoveryCode: string, i
       provider: user.provider || 'credentials',
       storageused: user.storageused || 0,
       storagelimit: user.storagelimit || 5 * 1024 * 1024 * 1024,
+      telegramLinked: Boolean(user.telegramId || (user.provider === 'telegram' && user.providerId)),
     },
     recoveryWrapped: user.encryptionRecoveryWrapped,
     recoveryNonce: user.encryptionRecoveryNonce,

@@ -5,7 +5,7 @@ import User from "@/adapters/database/models/User";
 import ChildBot from "@/adapters/database/models/ChildBot";
 
 export async function GET() {
-  const auth = await getAuthUser();
+  const auth = await getAuthUser({ allowUnlinked: true });
   if (!auth?.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await connectDB();
   const user = await User.findById(auth.userId).select("provider providerId telegramId telegramUsername").lean();

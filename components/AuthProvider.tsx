@@ -21,15 +21,15 @@ type AuthUser = {
   provider: string;
   storageused: number;
   storagelimit: number;
+  telegramLinked?: boolean;
 };
 
 type AuthContextValue = {
   user: AuthUser | null;
   isReady: boolean;
   isAuthenticated: boolean;
-  // Called by each login path (Authform.tsx, TelegramLoginButton.tsx) with
-  // the `{user}` its own POST already returned, so the client's session
-  // state updates immediately without a redundant extra round-trip.
+  // Called by login and registration paths with their returned user so the
+  // client session state updates without a redundant round-trip.
   setAuthUser: (user: AuthUser) => void;
   logout: () => Promise<void>;
 };
@@ -139,7 +139,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   // /api/auth/recover + client/lib/dek.ts's unlockDeviceDEK. A brand-new
   // account with no encryption at all still gets 'setup' automatically.
   useEffect(() => {
-    if (!isReady || !user || exempt) return;
+    if (!isReady || !user || !user.telegramLinked || exempt) return;
     if (dekBootstrappedFor === user.userId) return;
 
     let cancelled = false;

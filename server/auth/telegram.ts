@@ -59,7 +59,14 @@ export async function verifyTelegramLogin(payload: TelegramLoginPayload): Promis
   }
 
   const telegramId = payload.id;
-  let user = await User.findOne({ provider: 'telegram', providerId: telegramId });
+  let user = await User.findOne({ telegramId }) || await User.findOne({ provider: 'telegram', providerId: telegramId });
+
+  if (user) {
+    user.telegramId = telegramId;
+    user.telegramUsername = payload.username || null;
+    if (user.provider === 'telegram') user.providerId = telegramId;
+    await user.save();
+  }
 
   if (!user) {
     user = await User.create({
@@ -67,6 +74,8 @@ export async function verifyTelegramLogin(payload: TelegramLoginPayload): Promis
       name: payload.first_name + (payload.last_name ? ` ${payload.last_name}` : ''),
       provider: 'telegram',
       providerId: telegramId,
+      telegramId,
+      telegramUsername: payload.username || null,
     });
   }
 
@@ -76,5 +85,6 @@ export async function verifyTelegramLogin(payload: TelegramLoginPayload): Promis
     provider: user.provider || 'telegram',
     storageused: user.storageused || 0,
     storagelimit: user.storagelimit || 5 * 1024 * 1024 * 1024,
+    telegramLinked: Boolean(user.telegramId || user.providerId),
   };
 }

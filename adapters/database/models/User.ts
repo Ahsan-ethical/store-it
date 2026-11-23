@@ -18,6 +18,9 @@ const UserSchema = new mongoose.Schema({
   providerId:   { type: String },  
   telegramId:   { type: String, sparse: true, unique: true },
   telegramUsername: { type: String, default: null },
+  // Short-lived lock makes child-bot provisioning idempotent under concurrent requests.
+  botProvisionLockUntil: { type: Date, default: null, select: false },
+  botProvisionLockId: { type: String, default: null, select: false },
   storageused:  { type: Number, default: 0 },
   storagelimit: { type: Number, default: 5 * 1024 * 1024 * 1024 },
   createdAt: { type: Date, default: Date.now },

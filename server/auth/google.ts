@@ -97,5 +97,6 @@ export async function upsertGoogleUser(info: GoogleUserinfo): Promise<AuthUser> 
     provider: user.provider || 'google',
     storageused: user.storageused || 0,
     storagelimit: user.storagelimit || 5 * 1024 * 1024 * 1024,
+    telegramLinked: Boolean(user.telegramId),
   };
 }

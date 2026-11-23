@@ -13,17 +13,21 @@ import { useAuth } from '@/components/AuthProvider';
 // disagree with it (see SESSION_EXCHANGE_VULNERABILITY.md). Once
 // AuthProvider has resolved (isReady) and found no real session, redirect
 // to sign-in instead of rendering the protected page with nothing in it.
-export default function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { isReady, isAuthenticated } = useAuth();
+export default function RequireAuth({ children, allowUnlinked = false }: { children: React.ReactNode; allowUnlinked?: boolean }) {
+  const { isReady, isAuthenticated, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
       router.replace('/sign_in');
+    } else if (isReady && isAuthenticated && !user?.telegramLinked && !allowUnlinked) {
+      router.replace('/connect-telegram');
+    } else if (isReady && isAuthenticated && user?.telegramLinked && allowUnlinked) {
+      router.replace('/dashboard');
     }
-  }, [isReady, isAuthenticated, router]);
+  }, [isReady, isAuthenticated, user?.telegramLinked, allowUnlinked, router]);
 
-  if (!isReady || !isAuthenticated) return null;
+  if (!isReady || !isAuthenticated || (!allowUnlinked && !user?.telegramLinked) || (allowUnlinked && user?.telegramLinked)) return null;
 
   return <>{children}</>;
 }

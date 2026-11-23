@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     const userinfo = await fetchGoogleUserinfo(accessToken);
     const user = await upsertGoogleUser(userinfo);
 
-    const response = NextResponse.redirect(new URL('/dashboard', req.url));
+    const response = NextResponse.redirect(new URL(user.telegramLinked ? '/dashboard' : '/connect-telegram', req.url));
     response.cookies.set('google_oauth_state', '', { path: '/api/auth', maxAge: 0 });
     await issueSession(response, user);
     return response;

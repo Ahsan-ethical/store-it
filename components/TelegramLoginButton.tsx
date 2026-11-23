@@ -1,91 +1,27 @@
-"use client"
+"use client";
 
-import { useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "./ui/button"
-import { useAuth } from "./AuthProvider"
+import { Button } from "./ui/button";
+import { useTelegramOAuthError } from "./useTelegramOAuthError";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  setup: "Telegram login is not configured yet. Add the Telegram OIDC settings in Vercel and try again.",
+  denied: "Telegram login was cancelled. Try again or use another sign-in method.",
+  state: "The Telegram login session expired or could not be verified. Start again.",
+  session: "Your StoreIt session expired. Sign in again, then link Telegram from the dashboard.",
+  linked: "This Telegram account is already linked to another StoreIt account. Sign in to the account it is linked to, or contact support.",
+  failed: "Telegram could not complete sign-in. Check the BotFather allowed URLs and Vercel settings, then retry.",
+};
 
 export function TelegramLoginButton() {
-  const router = useRouter()
-  const { setAuthUser } = useAuth()
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [botUsername, setBotUsername] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch("/api/auth/telegram/bot-info")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.username) setBotUsername(d.username)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => {
-    if (!botUsername || !containerRef.current) return
-
-    const existing = containerRef.current.querySelector("script");
-    if (existing) return;
-
-    ;(window as any).onTelegramAuth = async (user: any) => {
-      const res = await fetch("/api/auth/telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: String(user.id),
-          first_name: user.first_name || "",
-          last_name: user.last_name || "",
-          username: user.username || "",
-          photo_url: user.photo_url || "",
-          auth_date: String(user.auth_date),
-          hash: user.hash,
-        }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        // Must go through setAuthUser() (not left unset) so useAuth()'s
-        // client-side state actually updates — otherwise RequireAuth reads
-        // isAuthenticated as still false and bounces straight back to
-        // /sign_in.
-        setAuthUser(data.user)
-        router.push("/dashboard")
-      }
-    }
-
-    const script = document.createElement("script")
-    script.src = "https://telegram.org/js/telegram-widget.js?22"
-    script.setAttribute("data-telegram-login", botUsername)
-    script.setAttribute("data-size", "large")
-    script.setAttribute("data-onauth", "onTelegramAuth(user)")
-    script.setAttribute("data-request-access", "write")
-    script.async = true
-    containerRef.current.appendChild(script)
-
-    return () => {
-      delete (window as any).onTelegramAuth
-    }
-  }, [botUsername, router, setAuthUser])
-
-  if (loading) {
-    return (
-      <Button type="button" variant="secondary" className="w-full" disabled>
-        Loading Telegram...
-      </Button>
-    )
-  }
-
-  if (!botUsername) {
-    return (
-      <Button type="button" variant="secondary" className="w-full" disabled>
-        Telegram login unavailable
-      </Button>
-    )
-  }
+  const errorCode = useTelegramOAuthError();
+  const error = errorCode ? (ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.failed) : "";
 
   return (
-    <div className="flex justify-center">
-      <div ref={containerRef} />
+    <div className="flex w-full flex-col items-center gap-2">
+      <Button asChild variant="secondary" className="w-full">
+        <a href="/api/auth/telegram/start">Continue with Telegram</a>
+      </Button>
+      {error && <p role="alert" className="max-w-sm text-center text-sm text-destructive">{error}</p>}
     </div>
-  )
+  );
 }

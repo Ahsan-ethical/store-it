@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/adapters/database/mongoose'
 import User from '@/adapters/database/models/User'
 import { isRateLimited, recordAttempt, getClientIp } from '@/server/lib/rateLimit'
+import { issueSession } from '@/server/auth/auth'
 
 // No account exists yet to lock, so this limits by source IP instead —
 // bounds mass account creation / registration-endpoint abuse from one origin.
@@ -56,10 +57,17 @@ export async function POST(req: Request) {
       provider: "credentials",
     })
 
-    return NextResponse.json(
-      { message: 'Account created successfully' },
-      { status: 201 }
-    )
+    const authUser = {
+      userId: user._id.toString(),
+      email: user.email,
+      provider: user.provider || 'credentials',
+      storageused: user.storageused || 0,
+      storagelimit: user.storagelimit || 5 * 1024 * 1024 * 1024,
+      telegramLinked: Boolean(user.telegramId),
+    }
+    const response = NextResponse.json({ message: 'Account created successfully', user: authUser }, { status: 201 })
+    await issueSession(response, authUser)
+    return response
   } catch (err) {
     console.error("Register error:", err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

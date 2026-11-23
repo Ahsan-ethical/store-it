@@ -62,5 +62,6 @@ export async function verifyCredentials(email: string, password: string, ip: str
     provider: user.provider || 'credentials',
     storageused: user.storageused || 0,
     storagelimit: user.storagelimit || 5 * 1024 * 1024 * 1024,
+    telegramLinked: Boolean(user.telegramId),
   };
 }
