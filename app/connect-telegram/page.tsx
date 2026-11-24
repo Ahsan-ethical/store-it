@@ -5,10 +5,21 @@ import { useRouter } from "next/navigation";
 import RequireAuth from "@/components/RequireAuth";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
+import { useTelegramOAuthError } from "@/components/useTelegramOAuthError";
+
+const TELEGRAM_ERRORS: Record<string, string> = {
+  setup: "Telegram sign-in is not configured on the server yet. Please contact StoreIt support.",
+  denied: "Telegram linking was cancelled. You can try again whenever you’re ready.",
+  state: "The Telegram link session expired or could not be verified. Start again.",
+  session: "Your StoreIt session expired. Sign in again, then link Telegram.",
+  linked: "This Telegram account is linked to another StoreIt account, or this account already has a different Telegram account linked.",
+  failed: "Telegram could not complete account linking. Please try again or contact StoreIt support.",
+};
 
 function TelegramConnectionStep() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const telegramErrorCode = useTelegramOAuthError();
   const [signingOut, setSigningOut] = useState(false);
 
   async function switchAccount() {
@@ -25,6 +36,12 @@ function TelegramConnectionStep() {
           StoreIt gives each account its own Telegram storage bot. Connect the Telegram account that should own that bot before using your files.
         </p>
         {user?.email && <p className="mt-4 break-all text-sm">Signed in as <span className="font-medium">{user.email}</span></p>}
+
+        {telegramErrorCode && (
+          <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+            {TELEGRAM_ERRORS[telegramErrorCode] || TELEGRAM_ERRORS.failed}
+          </p>
+        )}
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <Button asChild className="flex-1">

@@ -11,7 +11,7 @@ const COOKIE_MAX_AGE = 10 * 60;
 
 export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get("mode") === "link" ? "link" : "login";
-  const destination = mode === "link" ? "/dashboard" : "/sign_in";
+  const destination = mode === "link" ? "/connect-telegram" : "/sign_in";
 
   if (mode === "link" && !(await getAuthUser({ allowUnlinked: true }))) {
     return NextResponse.redirect(new URL("/sign_in", request.url));

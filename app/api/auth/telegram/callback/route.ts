@@ -17,7 +17,9 @@ const COOKIE_NAMES = [
 ] as const;
 
 function finishRedirect(request: NextRequest, mode: "login" | "link", error?: string) {
-  const destination = mode === "link" ? "/dashboard" : error ? "/sign_in" : "/dashboard";
+  const destination = error
+    ? mode === "link" ? "/connect-telegram" : "/sign_in"
+    : "/dashboard";
   const url = new URL(destination, request.url);
   if (error) url.searchParams.set("telegram_error", error);
   const response = NextResponse.redirect(url);
